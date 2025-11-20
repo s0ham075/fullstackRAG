@@ -1,22 +1,34 @@
 from langchain_astradb import AstraDBVectorStore
-from astrapy.db import AstraDB as astra
-from langchain.retrievers.multi_query import MultiQueryRetriever
+from astrapy import DataAPIClient
+from astrapy.constants import VectorMetric
+from astrapy.info import CollectionDefinition, CollectionVectorOptions
+from langchain_classic.retrievers.multi_query import MultiQueryRetriever
 from langchain_community.embeddings.fastembed import FastEmbedEmbeddings
 from azure_utils import secret_client,get_blob_data
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import LLMChainExtractor
-from langchain.chains import RetrievalQA
-from langchain.memory import ConversationBufferMemory
-from langchain.prompts import PromptTemplate
-from langchain_together import Together
+from langchain_classic.retrievers import ContextualCompressionRetriever
+from langchain_classic.retrievers.document_compressors import LLMChainExtractor
+from langchain_classic.chains import RetrievalQA
+from langchain_classic.prompts import PromptTemplate
+from langchain_openai import ChatOpenAI
 import joblib
-
+import os
+import re
 def remove_pdf_extension(file_name):
+    """Remove PDF extension and sanitize collection name for AstraDB"""
+    # Remove .pdf extension
     if file_name.endswith(".pdf"):
-        return file_name[:-4]  # Removing the last 4 characters which are ".pdf"
+        name = file_name[:-4]
     else:
-        return file_name  # If the file name doesn't end with ".pdf", return as it is
-
+        name = file_name
+    
+    name = name.replace(" ", "_").replace("-", "_")
+    name = re.sub(r'[^a-zA-Z0-9_]', '', name)
+    if name and name[0].isdigit():
+        name = "col_" + name
+    name = name[:48]
+    if not name:
+        name = "collection_" + str(hash(file_name))[:8]
+    return name
 
 # def load_or_download_model(model_name, cache_file):
 #     try:
@@ -40,20 +52,37 @@ embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-small-en-v1.5")
 vectorstore = None
 astradbendpoint = secret_client.get_secret("astradbendpoint")
 astradbtoken = secret_client.get_secret("astratoken")
-togetherapikey = secret_client.get_secret("togetherapikey")
-db = astra(token= astradbtoken.value ,api_endpoint= astradbendpoint.value)
+openrouter_api_key = secret_client.get_secret("openrouterapikey").value
+
+# Set base URL (OpenRouter requirement)
+os.environ["OPENAI_API_BASE"] = "https://openrouter.ai/api/v1"
+os.environ["OPENAI_API_KEY"] = openrouter_api_key
+client = DataAPIClient(token=astradbtoken.value)
+db = client.get_database_by_api_endpoint(astradbendpoint.value)
 
 def embed_blob(blob_name):
-    collections_response = db.get_collections()
-    for collection in collections_response["status"]["collections"]:
-       target = remove_pdf_extension(blob_name)
-       if collection == target:
-           return 
-    
-    new_collection = db.create_collection(
-        remove_pdf_extension(blob_name),
-        dimension=384,
+    collection_names = db.list_collection_names()
+    target = remove_pdf_extension(blob_name)
+        
+    # Check if collection already exists
+    if target in collection_names:
+        print(f"Collection '{target}' already exists")
+        return True
+        
+    # Create collection definition with vector options
+    collection_definition = CollectionDefinition(
+        vector=CollectionVectorOptions(
+            dimension=384,  # BAAI/bge-small-en-v1.5 uses 384 dimensions
+            metric=VectorMetric.COSINE,
+        ),
     )
+        
+    # Create new collection
+    collection = db.create_collection(
+        target,
+        definition=collection_definition,
+    )
+    print(f"Collection '{target}' created")
 
     vectorstore = AstraDBVectorStore(
         embedding=embeddings,
@@ -93,17 +122,16 @@ prompt_template = get_prompt(instruction, sys_prompt)
 llama_prompt = PromptTemplate(
     template=prompt_template, input_variables=["context", "question"]
 )
-llama2_llm = Together(
-    model="togethercomputer/llama-2-70b-chat",
+llama2_llm = ChatOpenAI(
+    model="meta-llama/llama-3.3-70b-instruct:free",
     temperature=0.7,
     max_tokens=1024,
-    together_api_key=togetherapikey.value
 )
-llm = Together(
-    model="mistralai/Mixtral-8x7B-Instruct-v0.1",
+
+llm = ChatOpenAI(
+    model="meta-llama/llama-3.3-70b-instruct:free",
     temperature=0,
     max_tokens=1024,
-    together_api_key= togetherapikey.value,
 )
 compressor = LLMChainExtractor.from_llm(llm)
 

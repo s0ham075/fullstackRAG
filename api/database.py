@@ -12,7 +12,7 @@ config = dotenv_values(".env")
 # Retrieve MySQL environment variables
 mysql_user = secret_client.get_secret("mysqluser")
 mysql_password = secret_client.get_secret('mysqlpassword')
-mysql_host = secret_client.get_secret('host')
+mysql_host = secret_client.get_secret('dbhost')
 mysql_database = "fullstackRAG"
 
 # Construct SQLAlchemy database URL
@@ -24,7 +24,7 @@ engine = create_engine(
 try:
   engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
-    connect_args={"ssl_ca": "DigiCertGlobalRootCA.crt.pem"}
+    # connect_args={"ssl_ca": "DigiCertGlobalRootCA.crt.pem"}
 )
 except DatabaseError as e:
    print(e)

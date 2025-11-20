@@ -1,32 +1,35 @@
 "use client"
 import Link from "next/link";
 import { useRouter } from 'next/navigation'
-import axios from "axios";
-import { useState,ChangeEvent } from "react";
+import { api } from '@/lib/axios';
+import { useState, ChangeEvent } from "react";
 
 export default function Login() {
   const router = useRouter()
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
 
-  const handleSubmit = async (event:ChangeEvent<HTMLFormElement>) => {
-    event.preventDefault(); 
+  const handleSubmit = async (event: ChangeEvent<HTMLFormElement>) => {
+    event.preventDefault();
     const loginData = {
       username: username,
       password: password
     };
 
-    const response  = await axios.post('http://localhost:8000/auth/token', loginData)
-    if(response.data){
+    const response = await api.post(
+      `auth/token`,
+      loginData
+    );
+    if (response.data) {
       const token = response.data.access_token;
       localStorage.setItem('token', token); // Store token in local storage
       console.log("succesfull")
       router.push("/chat")
     }
-    else{
+    else {
       alert("error logging in , please try again")
     }
-    
+
   }
 
   return (

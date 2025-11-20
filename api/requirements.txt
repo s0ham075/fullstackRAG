@@ -15,7 +15,10 @@ unstructured
 langchain
 astrapy>=0.5.3
 langchain-community
-langchain-together
+langchain-openai
 langchain-astradb
 langchainhub
 fastembed
+pypdf
+langchain-classic
+bcrypt==4.0.1
